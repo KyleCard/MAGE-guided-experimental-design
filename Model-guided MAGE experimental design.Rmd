@@ -1,0 +1,209 @@
+---
+title: "Model-Guided MAGE Experimental Design"
+output: html_notebook
+---
+
+***
+
+## Background
+
+Multiplexed automated genome engineering (MAGE) is a high-throughput, fast, and cheap method for making targeted genomic modifications to *E. coli* chromosomes. In its simplest form, MAGE involves the transformation of a synthetic singled-stranded oligo into a growing population of cells. This oligo is designed to replace a target locus with an allele bearing a mutation of interest (i.e., mismatch, insertion, or deletion). One may perform multiple cycles of this oligo-based mutagenesis to increase the prevalence of the desired construct over time. Additionally, MAGE is a powerful approach when one wishes to generate combinatorial genetic diversity in a population. This is accomplished by iteratively introducing a library of mutagenic oligos that target multiple genomic sites^1^. 
+
+*From here on I borrow the logical and mathematical framework elagantly laid out in Gallagher et al. That paper is a fantastic resource and I highly recommend that you read it first before attempting MAGE. They, along with Wang et al. (the group who developed MAGE) have done all the intellectual heavy-lifting. That said, I wrote this R Notebook with the intention to take their framework and apply it to the specific experimental needs of the researcher performing MAGE. Lastly and importantly, I am still a R-newbie, so the code below may be rough around the edges, or there may be a better way to do it (i.e., doing the calculations based on the binomial distribution model in R without needing to rely on Excel, as I've done). If so, please let me know. I am eager to learn!*
+
+***
+
+## Prerequisites
+
+First, set the working directory to the location where you saved the "Model-guided MAGE experimental design.csv" and this R Markdown file. In RStudio, *(Session > Set Working Directory > Choose Directory...)*
+
+Execute each chunk of code by placing your cursor inside it and pressing *Ctrl+Shift+Enter* (*Cmd+Shift+Enter* on Mac).
+
+Download and install packages required to generate plots. *You only need to run this code chunk the first time*
+```{r}
+install.packages(c("tidyverse", "cowplot", "viridis"))
+```
+
+<br>
+Load the packages for use.
+```{r}
+library(tidyverse)
+library(cowplot)
+library(viridis)
+```
+
+<br>
+Read in the data frame to R and assign it to the variable "data". This code chunk also assigns the values in "cycle" and "allelicReplacementFrequency" columns as "factors"" rather than "numeric", which is important to generate the plots correctly. 
+```{r}
+data <- read.csv("Model-guided MAGE experimental design.csv")
+data$cycles <- as.factor(data$cycles)
+data$allelicReplacementFrequency <- as.factor(data$allelicReplacementFrequency)
+```
+
+
+***
+
+## Modeling a population undergoing MAGE
+
+There are two possible outcomes when one targets a chromosomal locus for mutagenization by allelic replacement: (i.) replacement occurs and the locus is mutagenized, or (ii.) replacement does not occur and the locus remains the same. A population undergoing MAGE can therefore be thought of as a group of these binary events^2^. Assuming,
+
+1. No off-target recombination events
+2. No linkages between loci
+3. No effects on fitness
+
+Then replacement events at each target locus occur independently and at a fixed replacement frequency *R* per MAGE cycle.
+
+The simplest form of MAGE occurs when a researcher targets a **single** locus for allelic replacement. The expected prevalence *p* of this single mutant in the population after *N* cycles is then^2^: $$p = 1-(1-R)^N$$ In other words, one can get by with fewer MAGE cycles to reliably isolate a single mutant of interest. To determine how many colonies one needs to screen in order to isolate this single mutant, see the relevant equation below.
+
+**The rest of this guide will focus on instances where the researcher is targeting multiple genomic loci for allelic replacement.**
+
+***
+
+## Prevalence of variants in an evolving population undergoing MAGE
+
+If one is targeting **multiple** genomic loci for allelic replacement, and assuming that all *n* loci are targeted with oligos that have the same allelic replacement frequency *R*, then the evolving population can then be described by the distribution of the number of allelic replacements per clone *k*, which is a binomial distribution^2^: $$p = {n \choose k} (1-(1-R)^N)^k (1-R)^{N(n-k)}$$
+
+In general, when one targets multiple loci, the fraction of *k* increases with the number of MAGE cycles. This trend is shown in Figure 4b of Gallagher et al. However, this representation is not optimal in most cases. For example, if targeting 3 loci, one will not find a clone where 10% of these sites (*k* = 0.3) have been replaced. It therefore makes sense to plot the distribution of allelic replacements per clone on an absolute scale instead. 
+
+<br>
+This code chunk plots the predicted distribution of genetic variants in a population that has undergone multiplexed allelic replacement at 3 loci across 6 different MAGE cycles. The plot is faceted by allelic replacement frequency per locus *R* (0.01, 0.05, 0.1, 0.15, 0.2, 0.3, and 0.5). 
+
+*Feel free to manipulate the "Model-guided MAGE experimental design (Equations).xlxs" file to suit your experimental needs. For example, if you are interested in targeting 5 loci for allelic replacements, you will need to change the "Number of Loci (n)" (Cell B2 in the Excel file) to "5". Moreover, you will need to include the possibility of clones with k = 4 and k = 5 additional allelic replacements by adding in new rows into the worksheet. Lastly, you will need to fill values in the "Prevalence in population (p)" and "Number of colonies needed to screen at 95% likelihood (s)" columns. Copy and paste this worksheet into the "Model-guided MAGE experimental design.csv" file, save, and read it into R using the above code.*
+
+After you run the code below in RStudio, click "Show in New Window" button above the plot and maximize the window to see it in full screen.
+```{r}
+ggplot(data, aes(x = numberOfReplacements, y = prevalence, color = cycles)) +
+  geom_line(size = 1.5) +
+  facet_wrap(c("allelicReplacementFrequency"), nrow = 4, scales = "free") +
+  xlab("Number of allelic replacements per clone") +
+  ylab("Expected prevelance in population") +
+  scale_y_continuous(limit = c(0, 1), breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)) +
+  scale_color_viridis(name = "MAGE\ncycles", discrete = TRUE) +
+  theme(strip.background = element_rect(color = "white", fill = "white"),
+        strip.text.x = element_text(face = "bold"))
+```
+
+<br>
+
+If you would like to examine any particular panel without showing the others, use these chunks of code. Here, I am only showing the panel with allelic replacement frequency of 0.05 as an example, but you can tweak the code chunks below to fit your needs.
+
+First, we filter observations in the "Model-guided MAGE experimental design data" to only show those with a replacement frequency of 0.05, then we assign this new data frame to the variable "singleARF".
+```{r}
+singleARF <- filter(data, allelicReplacementFrequency == 0.05)
+```
+
+<br>
+
+Then we plot.
+```{r}
+ggplot(singleARF, aes(x = numberOfReplacements, y = prevalence, color = cycles)) +
+  geom_line(size = 1.5) +
+  xlab("Number of allelic replacements per clone") +
+  ylab("Expected prevelance in population") +
+  scale_y_continuous(limit = c(0, 1), breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)) +
+  scale_color_viridis(name = "Cycles", discrete = TRUE)
+```
+
+***
+
+##Population genetic diversity during MAGE
+
+We can also use the binomial distribution model to predict the population genetic diversity at the end of each MAGE cycle. This may be important if one would like to determine when a population will consist of variants that are evenly distributed. For instance, if one is targeting 3 loci with an allelic replacement frequency per locus of 20%, then after one cycle of MAGE the prevalence of triple mutants is vanishingly small. However, after 20 MAGE cycles these mutants will greatly outnumber those with *k* = 1 or 2 replacements. Therefore, it would be best to sample the population around cycle 3 if one would like to capture the greatest diversity (see plot below).  
+
+```{r}
+ggplot(data, aes(x = cycles, y = prevalence, fill = numberOfReplacements)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(c("allelicReplacementFrequency"), nrow = 4, scales = "free") +
+  xlab("Number of MAGE cycles") +
+  ylab("Prevalence in population") +
+  scale_fill_viridis(name = c("Number\nof replacements")) +
+  theme(strip.background = element_rect(color = "white", fill = "white"),
+        strip.text.x = element_text(face = "bold"))
+```
+<br>
+
+Again, I am only showing the panel with allelic replacement frequency of 0.05 as an example, but you can tweak the code chunks to fit your needs.
+```{r}
+ggplot(singleARF) +
+  geom_bar(aes(x = cycles, y = prevalence, fill = numberOfReplacements), stat = "identity") +
+  xlab("Number of MAGE cycles") +
+  ylab("Prevalence in population") +
+  scale_fill_viridis(name = c("Number of\nreplacements")) +
+  theme(strip.background = element_rect(color = "white", fill = "white"),
+        strip.text.x = element_text(face = "bold"))
+```
+
+***
+
+## Colony screening requirement
+
+We will use the binomial model to predict the number of colonies, *s*, needed to screen in order to isolate a variant with a given number of allelic replacements, *k* at 95% confidence: $$s > log(0.05) / log(1-f)$$ These predictions are arguably most important to the researcher because they give a measure of the tractability of the experiment. For example, if one is targeting three loci at a replacement frequency per site of 5%, one would need to screen ~24,000 and 45 clones after 1 and 10 cycles, respectively to reliably find a triple mutant. 
+
+In general, one would need to^2^:
+
+1. Perform more MAGE cycles, or 
+2. Increase the allelic replacement frequency per locus *R* through improved oligo design, or
+3. Perform coselection MAGE^3^ 
+
+to increase the likelihood of isolating a mutant with multiple allelic replacements when more than a few loci are targeted. *Note: one should aim to screen < 100 colonies if using multiplex allele-specific PCR (MASC-PCR) (see Gallagher et al., 2014).*
+
+<br>
+This code chunk plots the colony screening requirement to isolate clones with 1, 2, or 3 allelic replacements given that 3 loci are targeted. The plot is faceted by number of cycles *N* (1, 3, 5, 10, 15, 20). *Note: I am not showing wild-type genotypes because it wouldn't make sense to screen for these variants because they are what you started off with!*
+
+```{r}
+dataRemovedWildtype <- filter(data, numberOfReplacements > 0) 
+```
+
+
+```{r}
+ggplot(dataRemovedWildtype, aes(x = numberOfReplacements, y = screenedColonies, color = allelicReplacementFrequency)) +
+  geom_line(size = 1.5) +
+  facet_wrap(c("cycles"), nrow = 3, scales = "free") +
+  xlab("Number of allelic replacements per clone") +
+  ylab("Number of clones needed to screen") +
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 3), breaks = c(1, 2, 3)) +
+  scale_color_viridis(name = c("Allelic\nreplacement\nfrequency"), discrete = TRUE) +
+  theme(strip.background = element_rect(color = "white", fill = "white"),
+        strip.text.x = element_text(face = "bold"))
+```
+
+<br>
+Again, you can examine a particular panel more closely using these code chunks, below. Here, I am showing the panel with the screening requirement to isolate a clone with a given number of replacements after 1 MAGE cycle. The dotted grey horizontal line represents the number of colonies one can feasibly screen using MASC-PCR.  
+
+```{r}
+singleCycle <- filter(dataRemovedWildtype, cycles == 1)
+```
+
+```{r}
+ggplot(singleCycle, aes(x = numberOfReplacements, y = screenedColonies, color = allelicReplacementFrequency)) +
+  geom_hline(yintercept = 1e+02, color = "grey", linetype = "dashed", size = 2) +
+  geom_line(size = 1.5) +
+  xlab("Number of allelic replacements per clone") +
+  ylab("Number of clones needed to screen") +
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 3), breaks = c(1, 2, 3)) +
+  scale_color_viridis(name = c("Allelic\nreplacement\nfrequency"), discrete = TRUE)
+```
+
+
+***
+
+## References
+
+1. Wang, H. H. et al. Programming cells by multiplex genome engineering and accelerated evolution. *Nature* **460**, 894-8 (2009).
+2. Gallagher, R. R., Li, Z., Lewis, A. O. & Isaacs, F. J. Rapid editing and evolution of bacterial genomes using libraries of synthetic DNA. *Nat. Protoc.* **9**, 2301-2316 (2014).
+3. Carr, P. A. et al. Enhanced multiplex genome engineering through co-operative oligonucleotide co-selection. *Nucleic Acids Res.* **40**, e132 (2012).
+
+<br>
+<br>
+
+
+
+
+
+
+
+
+
+
